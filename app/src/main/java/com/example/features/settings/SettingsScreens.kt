@@ -265,7 +265,13 @@ private fun GeneralSettingsContent(
     onNavigateBack: () -> Unit,
     onUpdateBoolean: (String, Boolean) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    var showAgeConfirmDialog by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
         SettingsTopBar(title = "عام", onNavigateBack = onNavigateBack)
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
             Text(
@@ -289,7 +295,75 @@ private fun GeneralSettingsContent(
                 checked = settings.recommendationNotifications,
                 onCheckedChange = { onUpdateBoolean("recommendationNotifications", it) }
             )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+            Text(
+                text = "تصنيف المحتوى وقسم البالغين (+18)",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            SettingsSwitchRow(
+                title = "عرض الأعمال الناضجة (+16)",
+                subtitle = "السماح بظهور الأعمال المصنفة +16 في قوائم المكتبة",
+                checked = settings.allowMatureContent,
+                onCheckedChange = { onUpdateBoolean("allowMatureContent", it) }
+            )
+            SettingsSwitchRow(
+                title = "تفعيل قسم البالغين (+18)",
+                subtitle = "معطل افتراضياً • يفصل المصادر والأعمال المصنفة +18 في قسم مستقل محمي بتحقق السن",
+                checked = settings.adultContentEnabled,
+                onCheckedChange = { enabled ->
+                    if (enabled && !settings.ageVerified18Plus) {
+                        showAgeConfirmDialog = true
+                    } else {
+                        onUpdateBoolean("adultContentEnabled", enabled)
+                    }
+                }
+            )
+            SettingsSwitchRow(
+                title = "تمويه أغلفة المحتوى الحساس افتراضياً",
+                subtitle = "يطبق تمويهاً بصرياً على أغلفة الأعمال المصنفة +16 و +18 في الشبكة والقوائم",
+                checked = settings.blurSensitiveCovers,
+                onCheckedChange = { onUpdateBoolean("blurSensitiveCovers", it) }
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "ملاحظة الأمان: لا يرسل التطبيق أي إشعارات تحتوي على عناوين أو صور لمحتوى حساس (+18)، ويحظر المحتوى غير القانوني تلقائياً.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
+    }
+
+    if (showAgeConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showAgeConfirmDialog = false },
+            title = { Text("تأكيد السن (+18)") },
+            text = {
+                Text(
+                    "لتفعيل قسم البالغين (+18)، يرجى تأكيد أن عمرك 18 عاماً أو أكثر. سيتم إظهار قسم مستقل للمحتوى المصنف للبالغين مع إبقاء تمويه الأغلفة مفعلاً افتراضياً."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onUpdateBoolean("ageVerified18Plus", true)
+                        onUpdateBoolean("adultContentEnabled", true)
+                        showAgeConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
+                ) {
+                    Text("أؤكد أن عمري 18+", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAgeConfirmDialog = false }) {
+                    Text("إلغاء")
+                }
+            }
+        )
     }
 }
 

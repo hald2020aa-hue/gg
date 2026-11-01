@@ -65,7 +65,8 @@ fun MangaDrawerSheet(
     loggedInEmail: String?,
     onSelectRoute: (ScreenRoute) -> Unit,
     onLoginClick: () -> Unit,
-    onQuickAddDemoSources: () -> Unit
+    onQuickAddDemoSources: () -> Unit,
+    showAdultSection: Boolean = false
 ) {
     ModalDrawerSheet(
         modifier = Modifier
@@ -169,6 +170,16 @@ fun MangaDrawerSheet(
                 onClick = { onSelectRoute(ScreenRoute.History) }
             )
 
+            if (showAdultSection) {
+                DrawerNavRow(
+                    label = "قسم البالغين (+18)",
+                    icon = Icons.Default.MenuBook,
+                    selected = currentRoute is ScreenRoute.AdultSection,
+                    testTag = "drawer_adult_section",
+                    onClick = { onSelectRoute(ScreenRoute.AdultSection) }
+                )
+            }
+
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 8.dp),
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
@@ -182,7 +193,9 @@ fun MangaDrawerSheet(
                 onClick = { onSelectRoute(ScreenRoute.SourceManager) }
             )
 
-            val enabledSources = addedSources.filter { it.isEnabled }
+            val enabledSources = addedSources.filter {
+                it.isEnabled && (showAdultSection || it.contentRating != com.example.domain.models.ContentRating.ADULT_18_PLUS)
+            }
             if (enabledSources.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(

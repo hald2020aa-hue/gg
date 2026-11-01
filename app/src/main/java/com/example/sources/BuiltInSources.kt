@@ -181,7 +181,12 @@ abstract class ConfigurableHtmlMangaSource(
 
         // 1. Attempt direct HTML extraction from primary domain + mirrors
         val candidateUrls = buildCandidatePopularUrls(page)
+        val challengedHosts = mutableSetOf<String>()
         for (url in candidateUrls) {
+            val urlHost = url.substringAfter("://").substringBefore('/').lowercase()
+            if (urlHost in challengedHosts) {
+                continue
+            }
             try {
                 PipelineLogger.log(
                     stage = PipelineStage.NETWORK_REQUEST_STARTED,
@@ -218,6 +223,7 @@ abstract class ConfigurableHtmlMangaSource(
                         headers = headersMap
                     )
                     if (detection.isVerificationRequired) {
+                        challengedHosts.add(urlHost)
                         lastSecurityChallenge = detection
                         lastFailureReason = "Cloudflare challenge ($code) on $url"
                         PipelineLogger.log(

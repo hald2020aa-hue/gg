@@ -83,6 +83,7 @@ import com.example.core.images.MangaCoverImage
 import com.example.core.verification.SourceWebViewFallbackView
 import com.example.core.verification.VerificationGateView
 import com.example.core.verification.VerificationState
+import com.example.domain.models.ContentRating
 import com.example.domain.models.GridDisplayMode
 import com.example.domain.models.MangaSummary
 import com.example.domain.models.SortOption
@@ -101,7 +102,8 @@ fun StorageHomeScreen(
     onNavigateDownloads: () -> Unit,
     onNavigateSettings: () -> Unit,
     onChangeGridMode: (GridDisplayMode) -> Unit,
-    onImportSampleWork: () -> Unit
+    onImportSampleWork: () -> Unit,
+    blurSensitive: Boolean = false
 ) {
     var searchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -318,6 +320,7 @@ fun StorageHomeScreen(
             AdaptiveMangaGridOrList(
                 items = filtered,
                 displayMode = gridDisplayMode,
+                blurSensitive = blurSensitive,
                 onItemClick = { onOpenManga(it.id) }
             )
         }
@@ -345,7 +348,8 @@ fun SourceCatalogScreen(
     onToggleEmbeddedWebViewFallback: (Boolean) -> Unit = {},
     onVerifiedWebViewHtmlCaptured: (String, String, String) -> Unit = { _, _, _ -> },
     onNavigateDownloads: () -> Unit,
-    onNavigateSettings: () -> Unit
+    onNavigateSettings: () -> Unit,
+    blurSensitive: Boolean = false
 ) {
     var showFilterSheet by remember { mutableStateOf(false) }
     var showSortDialog by remember { mutableStateOf(false) }
@@ -730,6 +734,7 @@ fun SourceCatalogScreen(
                     items = filteredItems,
                     displayMode = gridDisplayMode,
                     refererUrl = source?.baseUrl,
+                    blurSensitive = blurSensitive,
                     onItemClick = { onOpenManga(it.id) }
                 )
             }
@@ -902,6 +907,7 @@ fun AdaptiveMangaGridOrList(
     items: List<MangaSummary>,
     displayMode: GridDisplayMode,
     refererUrl: String? = null,
+    blurSensitive: Boolean = false,
     onItemClick: (MangaSummary) -> Unit
 ) {
     if (displayMode == GridDisplayMode.LIST) {
@@ -914,6 +920,7 @@ fun AdaptiveMangaGridOrList(
                 MangaListCardItem(
                     manga = manga,
                     refererUrl = refererUrl,
+                    blurSensitive = blurSensitive,
                     onClick = { onItemClick(manga) }
                 )
             }
@@ -932,6 +939,7 @@ fun AdaptiveMangaGridOrList(
                 MangaGridCardItem(
                     manga = manga,
                     refererUrl = refererUrl,
+                    blurSensitive = blurSensitive,
                     onClick = { onItemClick(manga) }
                 )
             }
@@ -949,6 +957,7 @@ fun AdaptiveMangaGridOrList(
 fun MangaGridCardItem(
     manga: MangaSummary,
     refererUrl: String? = null,
+    blurSensitive: Boolean = false,
     onClick: () -> Unit
 ) {
     Card(
@@ -972,6 +981,8 @@ fun MangaGridCardItem(
                     title = manga.title,
                     refererUrl = refererUrl,
                     contentScale = ContentScale.Crop,
+                    blurSensitive = blurSensitive && manga.contentRating.isSensitive,
+                    ratingBadgeText = if (manga.contentRating.isSensitive) manga.contentRating.badgeText else null,
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -1051,6 +1062,7 @@ fun MangaGridCardItem(
 fun MangaListCardItem(
     manga: MangaSummary,
     refererUrl: String? = null,
+    blurSensitive: Boolean = false,
     onClick: () -> Unit
 ) {
     Card(
@@ -1078,6 +1090,8 @@ fun MangaListCardItem(
                     title = manga.title,
                     refererUrl = refererUrl,
                     contentScale = ContentScale.Crop,
+                    blurSensitive = blurSensitive && manga.contentRating.isSensitive,
+                    ratingBadgeText = if (manga.contentRating.isSensitive) manga.contentRating.badgeText else null,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -1415,3 +1429,199 @@ fun HistoryAndUpdatesScreen(
         }
     }
 }
+
+/**
+ * Section 7: Separate Adult 18+ Section Screen with Age Verification Gate,
+ * Blur Sensitive Covers toggle, 18+ Sources filter, and +18 Works Grid.
+ */
+@Composable
+fun AdultContentSectionScreen(
+    adultSources: List<SourceInfo>,
+    adultManga: List<MangaSummary>,
+    gridDisplayMode: GridDisplayMode,
+    adultContentEnabled: Boolean,
+    ageVerified18Plus: Boolean,
+    blurSensitiveCovers: Boolean,
+    onOpenDrawer: () -> Unit,
+    onConfirmAgeAndEnable: () -> Unit,
+    onDisableAdultSection: () -> Unit,
+    onToggleBlurCovers: (Boolean) -> Unit,
+    onOpenSourceCatalog: (String) -> Unit,
+    onOpenManga: (String) -> Unit,
+    onOpenAddSiteDialog: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("adult_section_screen")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onOpenDrawer) {
+                    Icon(Icons.Default.Menu, contentDescription = "القائمة")
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "قسم البالغين (+18)",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            if (adultContentEnabled && ageVerified18Plus) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(end = 8.dp)
+                ) {
+                    FilterChip(
+                        selected = blurSensitiveCovers,
+                        onClick = { onToggleBlurCovers(!blurSensitiveCovers) },
+                        label = { Text(if (blurSensitiveCovers) "تمويه الأغلفة: مفعل" else "تمويه الأغلفة: متوقف") },
+                        modifier = Modifier.testTag("adult_blur_toggle_chip")
+                    )
+                }
+            }
+        }
+
+        if (!adultContentEnabled || !ageVerified18Plus) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("age_verification_gate_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Surface(
+                            color = Color(0xFFE53935).copy(alpha = 0.16f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text(
+                                text = "+18",
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = Color(0xFFE53935),
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "تحقق السن مطلوب (+18)",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "يحتوي هذا القسم على أعمال ومصادر مصنفة للبالغين فقط (+18). يرجى تأكيد أن عمرك 18 عاماً أو أكثر للمتابعة. تظل الأغلفة مموهة افتراضياً ولا يتم إرسال أي إشعارات لمحتوى هذا القسم.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = onConfirmAgeAndEnable,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("confirm_age_18_button")
+                        ) {
+                            Text("أؤكد أن عمري 18+ وتفعيل القسم", color = Color.White)
+                        }
+                    }
+                }
+            }
+        } else {
+            if (adultSources.isNotEmpty()) {
+                Text(
+                    text = "مصادر البالغين والنضج المضافة (${adultSources.size})",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    adultSources.forEach { src ->
+                        FilterChip(
+                            selected = false,
+                            onClick = { onOpenSourceCatalog(src.id) },
+                            label = { Text("${src.name} (${src.contentRating.badgeText ?: "+18"})") }
+                        )
+                    }
+                    FilterChip(
+                        selected = false,
+                        onClick = onOpenAddSiteDialog,
+                        label = { Text("+ إضافة موقع +18") }
+                    )
+                }
+            }
+
+            if (adultManga.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "لا توجد أعمال +18 محفوظة حالياً.",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "يمكنك إضافة أي موقع مانجا أو مانهوا مصنف +18 عبر محرك المصادر الشامل وتحديد تصنيف +18 له.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(
+                                onClick = onOpenAddSiteDialog,
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text("+ إضافة موقع +18")
+                            }
+                            OutlinedButton(
+                                onClick = onDisableAdultSection,
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text("إغلاق قسم +18")
+                            }
+                        }
+                    }
+                }
+            } else {
+                AdaptiveMangaGridOrList(
+                    items = adultManga,
+                    displayMode = gridDisplayMode,
+                    blurSensitive = blurSensitiveCovers,
+                    onItemClick = { onOpenManga(it.id) }
+                )
+            }
+        }
+    }
+}
+

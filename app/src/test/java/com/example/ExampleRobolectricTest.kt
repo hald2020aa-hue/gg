@@ -308,4 +308,70 @@ class ExampleRobolectricTest {
         )
         assertTrue(verificationManager.isVerified("protected-empty.example.com"))
     }
+
+    @Test
+    fun `universal source engine preserves builtIn adapter on rename and restores custom configs across restarts`() = runBlocking {
+        val builtIns = listOf(
+            com.example.sources.MangalekSource(),
+            com.example.sources.MangastarzSource(),
+            com.example.sources.TeamXSource(),
+            com.example.sources.MangatekSource(),
+            com.example.sources.AzoraMangaSource(),
+            com.example.sources.MangaDexSource()
+        )
+        val registry = SourceRegistry(builtIns)
+        val validator = SourceValidator(registry)
+        val storage = com.example.core.storage.LocalChapterStorage(context)
+        val downloadEngine = com.example.core.downloads.DownloadEngine(context, db, storage, registry)
+        val repository = com.example.data.repositories.MangaRepository(
+            dao = db.mangaDao(),
+            registry = registry,
+            validator = validator,
+            storage = storage,
+            downloadEngine = downloadEngine
+        )
+
+        // Fix #1 & #3: All 6 built-in sources are registered and persisted without duplicates
+        repository.ensureDefaultSourcesRegistered()
+        repository.ensureDefaultSourcesRegistered() // Calling twice must not create duplicates
+        val persistedSources = db.mangaDao().getAllSourcesOnce()
+        assertEquals(6, persistedSources.size)
+
+        // Fix #2: Renaming "mangalek" in metadata must preserve MangalekSource adapter
+        val updateRes = repository.updateSourceMetadata(
+            sourceId = "mangalek",
+            newName = "مانجا ليك - اسم مخصص",
+            newBaseUrl = "https://mangalik.net",
+            language = "ar",
+            contentRating = com.example.domain.models.ContentRating.GENERAL,
+            engineType = com.example.domain.models.SourceEngineType.MADARA
+        )
+        assertTrue(updateRes.isSuccess)
+        val connectorAfterRename = repository.resolveConnector("mangalek")
+        assertTrue(
+            "Renaming Mangalek must keep its specialized MangalekSource adapter",
+            connectorAfterRename is com.example.sources.MangalekSource
+        )
+        assertEquals("مانجا ليك - اسم مخصص", db.mangaDao().getSourceById("mangalek")?.name)
+
+        // Import a custom JSON source configuration (including +18 rating) and verify persistence
+        val customAdultSourceConfig = com.example.domain.models.SourceConfiguration(
+            sourceId = "adult_custom_test",
+            sourceName = "مانهوا للكبار فقط",
+            domain = "adult-manhwa.example.com",
+            baseUrl = "https://adult-manhwa.example.com",
+            engineType = com.example.domain.models.SourceEngineType.CUSTOM_HTML,
+            contentRating = com.example.domain.models.ContentRating.ADULT_18_PLUS,
+            mangaCardSelector = ".adult-item"
+        )
+        val importRes = repository.importSourceConfigJson(customAdultSourceConfig.toJsonString())
+        assertTrue(importRes.isSuccess)
+        val importedInfo = importRes.getOrThrow()
+        assertEquals(com.example.domain.models.ContentRating.ADULT_18_PLUS, importedInfo.contentRating)
+        assertTrue(importedInfo.hasCustomConfig)
+
+        val exportedJson = repository.exportSourceConfigJson("adult_custom_test")
+        assertTrue(!exportedJson.isNullOrBlank() && exportedJson.contains(".adult-item"))
+    }
 }
+

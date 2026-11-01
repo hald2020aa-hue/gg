@@ -44,6 +44,7 @@ abstract class MangaDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `sources` ADD COLUMN `extractedChaptersCount` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `sources` ADD COLUMN `extractedPagesCount` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `sources` ADD COLUMN `lastError` TEXT")
+                db.execSQL("ALTER TABLE `sources` ADD COLUMN `hasCustomConfig` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `manga` ADD COLUMN `contentRating` TEXT NOT NULL DEFAULT 'GENERAL'")
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `source_configurations` (`sourceId` TEXT NOT NULL, `domain` TEXT NOT NULL, `configJson` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`sourceId`))"

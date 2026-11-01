@@ -30,7 +30,7 @@ interface MangaDao {
     @Query("UPDATE sources SET isEnabled = :enabled, status = :status WHERE id = :sourceId")
     suspend fun updateSourceEnabled(sourceId: String, enabled: Boolean, status: String)
 
-    @Query("UPDATE sources SET status = :status, extractedMangaCount = :mangaCount, extractedChaptersCount = :chaptersCount, extractedPagesCount = :pagesCount, lastError = :lastError, lastCheckedAt = :timestamp WHERE id = :sourceId")
+    @Query("UPDATE sources SET status = :status, extractedMangaCount = :mangaCount, extractedChaptersCount = :chaptersCount, extractedPagesCount = :pagesCount, lastError = :lastError, lastCheckedAt = :checkedAt WHERE id = :sourceId")
     suspend fun updateSourceDiagnostics(
         sourceId: String,
         status: String,
@@ -38,7 +38,7 @@ interface MangaDao {
         chaptersCount: Int,
         pagesCount: Int,
         lastError: String?,
-        timestamp: Long = System.currentTimeMillis()
+        checkedAt: Long = System.currentTimeMillis()
     )
 
     @Query("DELETE FROM sources WHERE id = :sourceId")
@@ -56,6 +56,9 @@ interface MangaDao {
 
     @Query("SELECT * FROM source_configurations")
     suspend fun getAllSourceConfigs(): List<SourceConfigEntity>
+
+    @Query("SELECT * FROM source_configurations")
+    suspend fun getAllSourceConfigsOnce(): List<SourceConfigEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSourceConfig(config: SourceConfigEntity)

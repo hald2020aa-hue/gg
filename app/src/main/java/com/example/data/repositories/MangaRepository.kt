@@ -134,20 +134,18 @@ class MangaRepository(
             val cleanDomain = dbSource.domain.lowercase().removePrefix("www.")
             seenDomains.add(cleanDomain)
 
-            val savedConfigEntity = existingConfigs[dbSource.id]
+            val savedConfig = existingConfigs[dbSource.id]?.toDomain()
             val builtIn = registry.findBuiltInByDomain(dbSource.domain)
                 ?: registry.findById(dbSource.id)
                 ?: registry.findByDomain(dbSource.domain)
 
             val connector: MangaSource = when {
-                savedConfigEntity != null && savedConfigEntity.toDomain().hasCustomSelectors() -> {
-                    SourceAdapterFactory.createFromConfig(savedConfigEntity.toDomain())
-                }
-                builtIn != null && builtIn !is DynamicSiteSource && builtIn !is DynamicSourceAdapter -> {
+                builtIn != null && builtIn !is DynamicSiteSource && builtIn !is DynamicSourceAdapter &&
+                    savedConfig?.engineType != SourceEngineType.CUSTOM_HTML -> {
                     builtIn
                 }
-                savedConfigEntity != null -> {
-                    SourceAdapterFactory.createFromConfig(savedConfigEntity.toDomain())
+                savedConfig != null -> {
+                    SourceAdapterFactory.createFromConfig(savedConfig)
                 }
                 else -> {
                     DynamicSiteSource(
@@ -198,7 +196,7 @@ class MangaRepository(
 
     override suspend fun resolveConnector(sourceIdOrDomain: String): MangaSource? {
         val savedConfig = dao.getSourceConfigById(sourceIdOrDomain)?.toDomain()
-        if (savedConfig != null && savedConfig.hasCustomSelectors()) {
+        if (savedConfig != null && savedConfig.engineType == SourceEngineType.CUSTOM_HTML) {
             val customAdapter = SourceAdapterFactory.createFromConfig(savedConfig)
             customAdapter.attachVerificationManager(verificationManager)
             registry.register(customAdapter)
@@ -223,7 +221,7 @@ class MangaRepository(
         if (dbSource != null) {
             val configByDbId = dao.getSourceConfigById(dbSource.id)?.toDomain()
                 ?: dao.getSourceConfigByDomain(dbSource.domain)?.toDomain()
-            if (configByDbId != null && configByDbId.hasCustomSelectors()) {
+            if (configByDbId != null && configByDbId.engineType == SourceEngineType.CUSTOM_HTML) {
                 val customAdapter = SourceAdapterFactory.createFromConfig(configByDbId)
                 customAdapter.attachVerificationManager(verificationManager)
                 registry.register(customAdapter)
@@ -464,7 +462,7 @@ class MangaRepository(
             customId = sourceId,
             customName = normalizedConfig.sourceName,
             config = normalizedConfig,
-            builtInFallback = if (normalizedConfig.hasCustomSelectors()) null else registry.findBuiltInByDomain(normalizedConfig.domain),
+            builtInFallback = registry.findBuiltInByDomain(normalizedConfig.domain),
             verificationManager = verificationManager
         )
         registry.register(adapter)
@@ -1183,79 +1181,22 @@ class MangaRepository(
         lastReadPage = lastReadPage
     )
 
-    private fun SourceConfigEntity.toDomain() = SourceConfiguration(
-        sourceId = sourceId,
-        sourceName = sourceName,
-        domain = domain,
-        baseUrl = baseUrl,
-        language = language,
-        engineType = runCatching { SourceEngineType.valueOf(engineType) }.getOrDefault(SourceEngineType.MADARA),
-        contentRating = runCatching { ContentRating.valueOf(contentRating) }.getOrDefault(ContentRating.GENERAL),
-        popularPath = popularPath,
-        latestPath = latestPath,
-        searchPathTemplate = searchPathTemplate,
-        mangaListSelector = mangaListSelector,
-        mangaTitleSelector = mangaTitleSelector,
-        mangaTitleAttr = mangaTitleAttr,
-        mangaUrlSelector = mangaUrlSelector,
-        mangaUrlAttr = mangaUrlAttr,
-        mangaCoverSelector = mangaCoverSelector,
-        mangaCoverAttr = mangaCoverAttr,
-        detailsTitleSelector = detailsTitleSelector,
-        detailsDescriptionSelector = detailsDescriptionSelector,
-        detailsCoverSelector = detailsCoverSelector,
-        detailsAuthorSelector = detailsAuthorSelector,
-        detailsStatusSelector = detailsStatusSelector,
-        detailsGenresSelector = detailsGenresSelector,
-        chapterListSelector = chapterListSelector,
-        chapterTitleSelector = chapterTitleSelector,
-        chapterUrlSelector = chapterUrlSelector,
-        chapterDateSelector = chapterDateSelector,
-        pageListSelector = pageListSelector,
-        pageImageAttr = pageImageAttr,
-        customUserAgent = customUserAgent,
-        refererUrl = refererUrl,
-        extraHeadersJson = extraHeadersJson,
-        requiresVerification = requiresVerification,
-        useWebViewFallback = useWebViewFallback,
-        updatedAt = updatedAt
-    )
+    private fun SourceConfigEntity.toDomain(): SourceConfiguration {
+        return SourceConfiguration.fromJsonString(configJson).getOrElse {
+            SourceConfiguration(
+                domain = domain,
+                sourceId = sourceId,
+                updatedAt = updatedAt
+            )
+        }
+    }
 
-    private fun SourceConfiguration.toEntity() = SourceConfigEntity(
-        sourceId = sourceId,
-        sourceName = sourceName,
-        domain = domain,
-        baseUrl = baseUrl,
-        language = language,
-        engineType = engineType.name,
-        contentRating = contentRating.name,
-        popularPath = popularPath,
-        latestPath = latestPath,
-        searchPathTemplate = searchPathTemplate,
-        mangaListSelector = mangaListSelector,
-        mangaTitleSelector = mangaTitleSelector,
-        mangaTitleAttr = mangaTitleAttr,
-        mangaUrlSelector = mangaUrlSelector,
-        mangaUrlAttr = mangaUrlAttr,
-        mangaCoverSelector = mangaCoverSelector,
-        mangaCoverAttr = mangaCoverAttr,
-        detailsTitleSelector = detailsTitleSelector,
-        detailsDescriptionSelector = detailsDescriptionSelector,
-        detailsCoverSelector = detailsCoverSelector,
-        detailsAuthorSelector = detailsAuthorSelector,
-        detailsStatusSelector = detailsStatusSelector,
-        detailsGenresSelector = detailsGenresSelector,
-        chapterListSelector = chapterListSelector,
-        chapterTitleSelector = chapterTitleSelector,
-        chapterUrlSelector = chapterUrlSelector,
-        chapterDateSelector = chapterDateSelector,
-        pageListSelector = pageListSelector,
-        pageImageAttr = pageImageAttr,
-        customUserAgent = customUserAgent,
-        refererUrl = refererUrl,
-        extraHeadersJson = extraHeadersJson,
-        requiresVerification = requiresVerification,
-        useWebViewFallback = useWebViewFallback,
-        updatedAt = System.currentTimeMillis()
-    )
+    private fun SourceConfiguration.toEntity(): SourceConfigEntity {
+        return SourceConfigEntity(
+            sourceId = sourceId,
+            domain = domain,
+            configJson = toJsonString(),
+            updatedAt = System.currentTimeMillis()
+        )
+    }
 }

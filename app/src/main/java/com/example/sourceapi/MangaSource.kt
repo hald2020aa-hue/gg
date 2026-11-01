@@ -15,6 +15,7 @@ import com.example.domain.models.MangaSummary
 import com.example.domain.models.PageResult
 import com.example.domain.models.SiteInspectionReport
 import com.example.domain.models.SourceCapability
+import com.example.domain.models.SourceConfiguration
 import com.example.domain.models.SourceDiagnosticReport
 import com.example.domain.models.SourceEngineType
 import com.example.domain.models.SourceStatus
@@ -292,7 +293,8 @@ data class SourceValidationStepResult(
     val suggestedName: String,
     val messageAr: String,
     val diagnosticReport: SourceDiagnosticReport? = null,
-    val inspectionReport: SiteInspectionReport? = null
+    val inspectionReport: SiteInspectionReport? = null,
+    val generatedConfig: SourceConfiguration? = inspectionReport?.recommendedConfig
 )
 
 /**
@@ -324,9 +326,14 @@ class SourceRegistry(sources: List<MangaSource>) {
     fun register(source: MangaSource) {
         val domainKey = source.domain.lowercase()
         val existingByDomain = byDomain[domainKey]
-        // Fix #2: Never overwrite an already-registered specialized built-in source with a generic DynamicSiteSource
-        if (existingByDomain != null && existingByDomain !is DynamicSiteSource && source is DynamicSiteSource) {
-            byId[source.id] = existingByDomain
+        val isExistingBuiltIn = existingByDomain != null &&
+            existingByDomain !is DynamicSiteSource &&
+            existingByDomain !is DynamicSourceAdapter
+        val isIncomingGeneric = source is DynamicSiteSource ||
+            (source is DynamicSourceAdapter && source.config.engineType != SourceEngineType.CUSTOM_HTML)
+        // Fix #2: Never overwrite an already-registered specialized built-in source with a generic adapter
+        if (isExistingBuiltIn && isIncomingGeneric) {
+            byId[source.id] = existingByDomain!!
             return
         }
         byId[source.id] = source
@@ -760,3 +767,6 @@ class SourceManager(
         return healthChecker.checkSourceHealth(source)
     }
 }
+
+typealias SourceAdapterManager = SourceManager
+

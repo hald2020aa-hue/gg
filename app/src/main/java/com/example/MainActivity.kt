@@ -40,10 +40,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.domain.models.ContentRating
 import com.example.features.MainViewModel
 import com.example.features.ScreenRoute
 import com.example.features.details.MangaDetailsScreen
 import com.example.features.downloads.DownloadsScreen
+import com.example.features.home.AdultContentSectionScreen
 import com.example.features.home.FavoritesScreen
 import com.example.features.home.HistoryAndUpdatesScreen
 import com.example.features.home.RecommendationsScreen
@@ -101,6 +103,41 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
     val loggedInEmail by vm.loggedInEmail.collectAsState()
     val diagnosticReports by vm.diagnosticReports.collectAsState()
     val isRunningDiagnostics by vm.isRunningDiagnostics.collectAsState()
+    val fullTestReports by vm.fullTestReports.collectAsState()
+    val isRunningFullTest by vm.isRunningFullTest.collectAsState()
+    val editingSourceConfig by vm.editingSourceConfig.collectAsState()
+    val configPreviewItems by vm.configPreviewItems.collectAsState()
+    val isPreviewingConfig by vm.isPreviewingConfig.collectAsState()
+    val exportedConfigJson by vm.exportedConfigJson.collectAsState()
+
+    // Section 7: Filter general library lists based on ContentRating preferences
+    val visibleStoredManga = remember(storedManga, settings.adultContentEnabled, settings.allowMatureContent) {
+        storedManga.filter { manga ->
+            when (manga.contentRating) {
+                ContentRating.ADULT_18_PLUS -> settings.adultContentEnabled && settings.ageVerified18Plus
+                ContentRating.MATURE -> settings.allowMatureContent
+                else -> true
+            }
+        }
+    }
+    val visibleAllManga = remember(allManga, settings.adultContentEnabled, settings.allowMatureContent) {
+        allManga.filter { manga ->
+            when (manga.contentRating) {
+                ContentRating.ADULT_18_PLUS -> settings.adultContentEnabled && settings.ageVerified18Plus
+                ContentRating.MATURE -> settings.allowMatureContent
+                else -> true
+            }
+        }
+    }
+    val visibleFavorites = remember(favorites, settings.adultContentEnabled, settings.allowMatureContent) {
+        favorites.filter { (_, manga) ->
+            when (manga.contentRating) {
+                ContentRating.ADULT_18_PLUS -> settings.adultContentEnabled && settings.ageVerified18Plus
+                ContentRating.MATURE -> settings.allowMatureContent
+                else -> true
+            }
+        }
+    }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -122,7 +159,8 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
         currentRoute is ScreenRoute.Recommendations ||
         currentRoute is ScreenRoute.Updates ||
         currentRoute is ScreenRoute.Favorites ||
-        currentRoute is ScreenRoute.History
+        currentRoute is ScreenRoute.History ||
+        currentRoute is ScreenRoute.AdultSection
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -145,7 +183,8 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
                     scope.launch { drawerState.close() }
                     vm.navigateTo(ScreenRoute.SourceManager)
                     vm.openAddSiteDialog("")
-                }
+                },
+                showAdultSection = settings.adultContentEnabled
             )
         }
     ) {
@@ -161,7 +200,7 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
                 when (val route = currentRoute) {
                     is ScreenRoute.Storage -> {
                         StorageHomeScreen(
-                            storedManga = storedManga,
+                            storedManga = visibleStoredManga,
                             gridDisplayMode = settings.gridDisplayMode,
                             onOpenDrawer = { scope.launch { drawerState.open() } },
                             onOpenManga = { mangaId -> vm.navigateTo(ScreenRoute.MangaDetailsRoute(mangaId)) },
@@ -176,7 +215,8 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
                                 } else {
                                     vm.navigateTo(ScreenRoute.SourceCatalog(addedSources.first().id))
                                 }
-                            }
+                            },
+                            blurSensitive = settings.blurSensitiveCovers
                         )
                     }
 
@@ -211,13 +251,14 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
                             onToggleEmbeddedWebViewFallback = vm::toggleEmbeddedWebViewFallback,
                             onVerifiedWebViewHtmlCaptured = vm::onVerifiedWebViewHtmlCaptured,
                             onNavigateDownloads = { vm.navigateTo(ScreenRoute.Downloads) },
-                            onNavigateSettings = { vm.navigateTo(ScreenRoute.SettingsMain) }
+                            onNavigateSettings = { vm.navigateTo(ScreenRoute.SettingsMain) },
+                            blurSensitive = settings.blurSensitiveCovers
                         )
                     }
 
                     is ScreenRoute.Recommendations -> {
                         RecommendationsScreen(
-                            allManga = allManga,
+                            allManga = visibleAllManga,
                             gridDisplayMode = settings.gridDisplayMode,
                             onOpenDrawer = { scope.launch { drawerState.open() } },
                             onOpenManga = { vm.navigateTo(ScreenRoute.MangaDetailsRoute(it)) },
@@ -248,7 +289,7 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
                     is ScreenRoute.Favorites -> {
                         val categories = settings.favoriteCategoriesCsv.split(',').map { it.trim() }.filter { it.isNotEmpty() }
                         FavoritesScreen(
-                            favorites = favorites,
+                            favorites = visibleFavorites,
                             categories = categories,
                             gridDisplayMode = settings.gridDisplayMode,
                             onOpenDrawer = { scope.launch { drawerState.open() } },
@@ -271,6 +312,36 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
                         )
                     }
 
+                    is ScreenRoute.AdultSection -> {
+                        val adultSources = remember(addedSources) {
+                            addedSources.filter { it.contentRating.isSensitive }
+                        }
+                        val adultManga = remember(allManga) {
+                            allManga.filter { it.contentRating.isSensitive }
+                        }
+                        AdultContentSectionScreen(
+                            adultSources = adultSources,
+                            adultManga = adultManga,
+                            gridDisplayMode = settings.gridDisplayMode,
+                            adultContentEnabled = settings.adultContentEnabled,
+                            ageVerified18Plus = settings.ageVerified18Plus,
+                            blurSensitiveCovers = settings.blurSensitiveCovers,
+                            onOpenDrawer = { scope.launch { drawerState.open() } },
+                            onConfirmAgeAndEnable = {
+                                vm.setBooleanSetting("ageVerified18Plus", true)
+                                vm.setBooleanSetting("adultContentEnabled", true)
+                            },
+                            onDisableAdultSection = {
+                                vm.setBooleanSetting("adultContentEnabled", false)
+                                vm.navigateTo(ScreenRoute.Storage, clearBackStack = true)
+                            },
+                            onToggleBlurCovers = { vm.setBooleanSetting("blurSensitiveCovers", it) },
+                            onOpenSourceCatalog = { sourceId -> vm.navigateTo(ScreenRoute.SourceCatalog(sourceId)) },
+                            onOpenManga = { mangaId -> vm.navigateTo(ScreenRoute.MangaDetailsRoute(mangaId)) },
+                            onOpenAddSiteDialog = { vm.openAddSiteDialog("") }
+                        )
+                    }
+
                     is ScreenRoute.SourceManager -> {
                         SourceManagerScreen(
                             sources = addedSources,
@@ -284,7 +355,23 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
                             onDeleteSource = vm::deleteSource,
                             onOpenSourceCatalog = { sourceId -> vm.navigateTo(ScreenRoute.SourceCatalog(sourceId)) },
                             onOpenDiagnostics = { vm.navigateTo(ScreenRoute.SourceDiagnostics) },
-                            onClearAllSources = vm::clearAllAddedSources
+                            onClearAllSources = vm::clearAllAddedSources,
+                            editingConfig = editingSourceConfig,
+                            previewItems = configPreviewItems,
+                            isPreviewingConfig = isPreviewingConfig,
+                            exportedConfigJson = exportedConfigJson,
+                            onOpenConfigEditor = vm::openSourceConfigEditor,
+                            onPreviewConfig = vm::previewSourceConfiguration,
+                            onSaveConfig = vm::saveSourceConfiguration,
+                            onCloseConfigEditor = vm::closeSourceConfigEditor,
+                            onUpdateSourceMetadata = vm::updateSourceMetadata,
+                            onExportSourceJson = vm::exportSourceConfigJson,
+                            onDismissExportedJson = vm::clearExportedConfigJson,
+                            onImportSourceJson = vm::importSourceConfigJson,
+                            onRunFullTest = { sourceId ->
+                                vm.navigateTo(ScreenRoute.SourceDiagnostics)
+                                vm.runFullSourceTest(sourceId)
+                            }
                         )
                     }
 
@@ -297,7 +384,10 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
                                 if (!vm.navigateBack()) vm.navigateTo(ScreenRoute.SourceManager)
                             },
                             onRunSingleDiagnostic = vm::runDiagnosticsForSource,
-                            onRunAllDiagnostics = vm::runAllSourcesDiagnostics
+                            onRunAllDiagnostics = vm::runAllSourcesDiagnostics,
+                            fullTestReports = fullTestReports,
+                            isRunningFullTest = isRunningFullTest,
+                            onRunFullTest = vm::runFullSourceTest
                         )
                     }
 
@@ -500,7 +590,8 @@ fun MangaReaderAppRoot(vm: MainViewModel) {
         onConfirmManualAdd = vm::confirmManualSiteAddition,
         onCompleteCloudflareVerify = vm::completeCloudflareHumanVerification,
         onFailCloudflareVerify = vm::failCloudflareVerification,
-        onCancelCloudflareVerify = vm::cancelCloudflareVerification
+        onCancelCloudflareVerify = vm::cancelCloudflareVerification,
+        onSelectContentRating = vm::updateSelectedSiteContentRating
     )
 
     if (showLoginPrompt) {

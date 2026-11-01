@@ -110,3 +110,12 @@ fun isSafeRedirectDestination(originalDomain: String, targetUrl: String): Boolea
         false
     }
 }
+
+object DomainNormalizer {
+    fun normalizeDomain(input: String, allowHttpUpgrade: Boolean = false): Result<String> {
+        return runCatching {
+            com.example.core.common.normalizeDomain(input, allowHttpUpgrade)
+        }
+    }
+}
+

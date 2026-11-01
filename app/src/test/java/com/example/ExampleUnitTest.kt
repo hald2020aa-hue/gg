@@ -545,7 +545,7 @@ class ExampleUnitTest {
         // 1. Test RTL copy-paste URL cleaning (/https://starzmanga.com)
         assertEquals("starzmanga.com", normalizeDomain("/https://starzmanga.com"))
         assertEquals("starzmanga.com", normalizeDomain("  /https://starzmanga.com/  "))
-        assertEquals("starzmanga.com", normalizeDomain("http://starzmanga.com/manga/"))
+        assertEquals("starzmanga.com", normalizeDomain("http://starzmanga.com/manga/", allowHttpUpgrade = true))
 
         // 2. Test empty SourceRegistry (0 pre-installed sites) + dynamic manual addition of starzmanga.com
         val emptyRegistry = SourceRegistry(emptyList())
@@ -560,5 +560,98 @@ class ExampleUnitTest {
         assertNotNull("Dynamic adapter must be created and matched", step.matchedSource)
         assertTrue("Registry must now contain the newly added site", emptyRegistry.getAllRegistered().isNotEmpty())
     }
+
+    @Test
+    fun universalSourceEngine_preservesBuiltInAdaptersAndSupportsCustomSelectorsAndContentSafety() = runBlocking {
+        // Fix #1 & Fix #2: Verify all 6 built-in sources and verify that registering a generic DynamicSiteSource
+        // for a built-in domain NEVER overwrites the specialized built-in connector
+        val builtInSources = listOf(
+            MangalekSource(),
+            com.example.sources.MangastarzSource(),
+            TeamXSource(),
+            MangatekSource(),
+            AzoraMangaSource(),
+            MangaDexSource()
+        )
+        val registry = SourceRegistry(builtInSources)
+        assertEquals(6, registry.getAllRegistered().size)
+
+        val genericOverrideAttempt = com.example.sources.DynamicSiteSource(
+            domain = "mangalik.net",
+            customId = "mangalek",
+            customName = "اسم معدل للمصدر"
+        )
+        registry.register(genericOverrideAttempt)
+        val resolvedAfterRename = registry.findByDomain("mangalik.net")
+        assertTrue(
+            "Fix #2: Specialized MangalekSource adapter must NOT be overwritten by generic DynamicSiteSource",
+            resolvedAfterRename is MangalekSource
+        )
+
+        // Verify MangastarzSource (6th built-in source) also extracts catalog items
+        val starz = com.example.sources.MangastarzSource()
+        val starzPopular = starz.getPopular(1)
+        assertTrue("MangastarzSource must return catalog items", starzPopular.items.isNotEmpty())
+
+        // Verify Custom CSS Selector configuration + SourceParser + JSON Export/Import
+        val customConfig = com.example.domain.models.SourceConfiguration(
+            sourceId = "custom_manhwa_site",
+            sourceName = "موقع مانهوا مخصص",
+            domain = "custom-manhwa.example.org",
+            baseUrl = "https://custom-manhwa.example.org",
+            engineType = com.example.domain.models.SourceEngineType.CUSTOM_HTML,
+            contentRating = com.example.domain.models.ContentRating.MATURE,
+            mangaCardSelector = "article.comic-card",
+            mangaTitleSelector = "h2.comic-title",
+            mangaUrlSelector = "a.comic-link",
+            coverImageSelector = "img.comic-cover",
+            chapterListSelector = "ul.chapters li",
+            chapterUrlSelector = "a",
+            pageImageSelector = "div.reader-images img"
+        )
+        assertTrue(customConfig.hasCustomSelectors())
+
+        val exportedJson = customConfig.toJsonString()
+        val importedConfig = com.example.domain.models.SourceConfiguration.fromJsonString(exportedJson).getOrThrow()
+        assertEquals("custom_manhwa_site", importedConfig.sourceId)
+        assertEquals("article.comic-card", importedConfig.mangaCardSelector)
+        assertEquals(com.example.domain.models.ContentRating.MATURE, importedConfig.contentRating)
+
+        val customHtml = """
+            <html><body>
+                <article class="comic-card">
+                    <a class="comic-link" href="/series/shadow-monarch">
+                        <img class="comic-cover" data-src="/assets/shadow.webp" />
+                        <h2 class="comic-title">Shadow Monarch Chronicles</h2>
+                    </a>
+                </article>
+            </body></html>
+        """.trimIndent()
+        val parsedCustom = com.example.sources.SourceParser.parseMangaListFromHtml(
+            html = customHtml,
+            baseUri = "https://custom-manhwa.example.org",
+            sourceId = customConfig.sourceId,
+            config = importedConfig
+        )
+        assertEquals(1, parsedCustom.size)
+        assertEquals("Shadow Monarch Chronicles", parsedCustom.first().title)
+        assertEquals("https://custom-manhwa.example.org/assets/shadow.webp", parsedCustom.first().coverUrl)
+
+        // Verify Section 7 ContentSafetyClassifier (+18 detection & illegal content blocking)
+        val adultRating = com.example.domain.models.ContentSafetyClassifier.classifyFromGenresAndText(
+            genres = listOf("Adult", "Smut", "+18"),
+            title = "Secret Adult Work",
+            description = "Mature 18+ manhwa"
+        )
+        assertEquals(com.example.domain.models.ContentRating.ADULT_18_PLUS, adultRating)
+        assertTrue(com.example.domain.models.ContentSafetyClassifier.isProhibitedIllegalContent("loli illegal work"))
+        assertFalse(com.example.domain.models.ContentSafetyClassifier.isProhibitedIllegalContent("Solo Leveling Action Fantasy"))
+
+        // Verify 11-stage SourceTestRunner on MangalekSource
+        val fullTestReport = com.example.sources.UniversalSourceEngine.runFullTest(MangalekSource())
+        assertEquals(11, fullTestReport.stages.size)
+        assertTrue("Full 11-stage test must pass stages", fullTestReport.passedCount >= 9)
+    }
 }
+
 

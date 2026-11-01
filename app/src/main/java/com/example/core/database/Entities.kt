@@ -28,7 +28,8 @@ data class SourceEntity(
     val extractedMangaCount: Int = 0,
     val extractedChaptersCount: Int = 0,
     val extractedPagesCount: Int = 0,
-    val lastError: String? = null
+    val lastError: String? = null,
+    val hasCustomConfig: Boolean = false
 )
 
 @Entity(

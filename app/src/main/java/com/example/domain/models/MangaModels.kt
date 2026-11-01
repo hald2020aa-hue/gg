@@ -16,7 +16,17 @@ enum class SourceStatus(val labelAr: String) {
     NEEDS_UPDATE("يحتاج إلى تحديث"),
     REQUIRES_VERIFICATION("يتطلب تحققاً أمنياً"),
     DISABLED("معطل"),
-    ERROR("خطأ في المصدر")
+    ERROR("خطأ في المصدر");
+
+    val isUsable: Boolean
+        get() = this in setOf(
+            SUPPORTED,
+            PARTIALLY_SUPPORTED,
+            WEBVIEW_ONLY,
+            NEEDS_CONFIGURATION,
+            NEEDS_VERIFICATION,
+            REQUIRES_VERIFICATION
+        )
 }
 
 enum class ContentRating(
@@ -36,7 +46,7 @@ enum class ContentRating(
  */
 object ContentSafetyClassifier {
     private val ILLEGAL_PROHIBITED_TERMS = listOf(
-        "csam", "child abuse", "pedophil", "underage explicit", "loli hentai", "shota hentai"
+        "csam", "child abuse", "pedophil", "underage", "loli", "shota", "minor explicit"
     )
 
     private val ADULT_18_KEYWORDS = listOf(
@@ -52,9 +62,17 @@ object ContentSafetyClassifier {
         "action", "fantasy", "martial arts", "shounen", "seinen", "أكشن", "اكشن", "فانتازيا", "فنون قتالية", "شونين", "سينين"
     )
 
-    fun isProhibitedIllegalContent(text: String): Boolean {
-        val lower = text.lowercase()
-        return ILLEGAL_PROHIBITED_TERMS.any { lower.contains(it) }
+    fun isProhibitedIllegalContent(
+        title: String,
+        description: String = "",
+        genres: List<String> = emptyList()
+    ): Boolean {
+        val combined = buildString {
+            append(title).append(' ')
+            append(description).append(' ')
+            append(genres.joinToString(" "))
+        }.lowercase()
+        return ILLEGAL_PROHIBITED_TERMS.any { combined.contains(it) }
     }
 
     fun classify(
@@ -88,6 +106,40 @@ object ContentSafetyClassifier {
         }
         return sourceDefaultRating
     }
+
+    fun classifyFromGenresAndText(
+        genres: List<String> = emptyList(),
+        title: String = "",
+        description: String = "",
+        domain: String = "",
+        explicitFlag: Boolean = false
+    ): ContentRating {
+        if (explicitFlag) return ContentRating.ADULT_18_PLUS
+        return classify(
+            title = title,
+            description = description,
+            genres = genres,
+            domain = domain
+        )
+    }
+
+    fun classifySource(domain: String, name: String = ""): ContentRating {
+        return classify(title = name, domain = domain)
+    }
+
+    fun classifyManga(
+        title: String,
+        description: String = "",
+        genres: List<String> = emptyList(),
+        sourceRating: ContentRating = ContentRating.GENERAL
+    ): ContentRating {
+        return classify(
+            title = title,
+            description = description,
+            genres = genres,
+            sourceDefaultRating = sourceRating
+        )
+    }
 }
 
 enum class SourceEngineType(val labelAr: String) {
@@ -95,6 +147,7 @@ enum class SourceEngineType(val labelAr: String) {
     MANGASTREAM("محرك MangaStream / Themesia"),
     MANGAREADER("محرك WP-MangaReader"),
     CUSTOM_HTML("محرك HTML مخصص (Custom Selectors)"),
+    GENERIC_HTML("محرك HTML ديناميكي عام"),
     JSON_API("محرك JSON API"),
     REST_API("محرك REST API رسمي"),
     RSS_FEED("محرك خلاصات RSS / Atom"),
@@ -120,29 +173,40 @@ enum class SourceCapability(val labelAr: String) {
  * or imported/exported as JSON.
  */
 data class SourceConfiguration(
-    val sourceId: String,
-    val sourceName: String,
     val domain: String,
+    val sourceId: String = "site_${domain.lowercase().replace('.', '_').replace('-', '_')}",
+    val sourceName: String = domain.substringBefore('.').replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
     val baseUrl: String = "https://$domain",
     val language: String = "ar",
     val engineType: SourceEngineType = SourceEngineType.MADARA,
     val contentRating: ContentRating = ContentRating.GENERAL,
+    val popularPath: String = "/manga/",
+    val latestPath: String = "/manga/?m_orderby=latest",
+    val searchPath: String = "/?s={query}&post_type=wp-manga",
+    val paginationPattern: String = "page/{page}/",
     val popularUrlTemplate: String = "{baseUrl}/manga/?page={page}",
     val latestUrlTemplate: String = "{baseUrl}/manga/?m_orderby=latest&page={page}",
     val searchUrlTemplate: String = "{baseUrl}/?s={query}&post_type=wp-manga",
     val mangaCardSelector: String = "div.page-item-detail, div.c-tabs-item__content, div.bsx, div.utao, div.uta, div.box, div.manga-item, article.item",
+    val mangaItemSelector: String = mangaCardSelector,
     val mangaTitleSelector: String = ".post-title h3 a, .post-title a, .luf a h4, .luf a, .tt, h3 a, h4 a",
+    val titleSelector: String = mangaTitleSelector,
     val mangaUrlSelector: String = ".post-title a[href], .luf a[href], h3 a[href], .item-thumb a[href], a[href*=/manga/], a[href*=/series/], a[href]",
     val coverImageSelector: String = ".item-thumb img, .tab-thumb img, .limit img, .imgu img, .manga-poster img, img",
+    val coverSelector: String = coverImageSelector,
     val coverImageAttributes: String = "data-src,data-lazy-src,data-original,data-bg,srcset,src",
     val latestChapterSelector: String = ".list-chapter .chapter-item:first-child .chapter a, .latest-chap .chapter a, .luf ul li a, .epxs, .chapter a",
     val nextPageSelector: String = "a.next, a.nextpostslink, .nav-previous a, .pagination .next, .hpage a.r",
     val detailsTitleSelector: String = ".post-title h1, h1.entry-title, .author-info-title h1, h1",
     val detailsDescriptionSelector: String = ".summary__content p, .description-summary p, .entry-content p, .review-content p, .summary__content",
+    val descriptionSelector: String = detailsDescriptionSelector,
     val detailsCoverSelector: String = ".summary_image img, .thumb img, .manga-poster img, .seriestucontl img, img.wp-post-image",
     val detailsAuthorSelector: String = ".author-content a, .fmed b:contains(المؤلف) + span",
+    val authorSelector: String = detailsAuthorSelector,
     val detailsStatusSelector: String = ".post-status .summary-content, .tsinfo .imptdt:contains(الحالة) i",
+    val statusSelector: String = detailsStatusSelector,
     val detailsGenresSelector: String = ".genres-content a, .mgen a, .seriestugenre a, .review-author-info a",
+    val genreSelector: String = detailsGenresSelector,
     val chapterListSelector: String = "li.wp-manga-chapter, #chapterlist li, .eplister ul li, .listing-chapters_wrap li",
     val chapterTitleSelector: String = ".chapternum, .epl-num, .epl-title, a",
     val chapterUrlSelector: String = "a[href]",
@@ -150,150 +214,249 @@ data class SourceConfiguration(
     val pageImageSelector: String = ".reading-content img, .page-break img, #readerarea img, img.wp-manga-chapter-img, img.manga-chapter-img",
     val pageImageAttributes: String = "data-src,data-lazy-src,data-original,src",
     val customUserAgent: String = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36",
+    val userAgent: String = customUserAgent,
     val customReferer: String = "https://$domain/",
     val customHeadersJson: String = "{}",
+    val headers: Map<String, String> = emptyMap(),
     val requiresWebViewVerification: Boolean = false,
+    val requiresVerification: Boolean = requiresWebViewVerification,
     val useWebViewOnlyMode: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis()
 ) {
+    fun hasCustomSelectors(): Boolean {
+        return engineType == SourceEngineType.CUSTOM_HTML ||
+            mangaItemSelector.isNotBlank() ||
+            coverSelector.isNotBlank() ||
+            chapterListSelector.isNotBlank() ||
+            pageImageSelector.isNotBlank()
+    }
+
     fun toJsonString(): String {
-        val obj = JSONObject()
-        obj.put("sourceId", sourceId)
-        obj.put("sourceName", sourceName)
-        obj.put("domain", domain)
-        obj.put("baseUrl", baseUrl)
-        obj.put("language", language)
-        obj.put("engineType", engineType.name)
-        obj.put("contentRating", contentRating.name)
-        obj.put("popularUrlTemplate", popularUrlTemplate)
-        obj.put("latestUrlTemplate", latestUrlTemplate)
-        obj.put("searchUrlTemplate", searchUrlTemplate)
-        obj.put("mangaCardSelector", mangaCardSelector)
-        obj.put("mangaTitleSelector", mangaTitleSelector)
-        obj.put("mangaUrlSelector", mangaUrlSelector)
-        obj.put("coverImageSelector", coverImageSelector)
-        obj.put("coverImageAttributes", coverImageAttributes)
-        obj.put("latestChapterSelector", latestChapterSelector)
-        obj.put("nextPageSelector", nextPageSelector)
-        obj.put("detailsTitleSelector", detailsTitleSelector)
-        obj.put("detailsDescriptionSelector", detailsDescriptionSelector)
-        obj.put("detailsCoverSelector", detailsCoverSelector)
-        obj.put("detailsAuthorSelector", detailsAuthorSelector)
-        obj.put("detailsStatusSelector", detailsStatusSelector)
-        obj.put("detailsGenresSelector", detailsGenresSelector)
-        obj.put("chapterListSelector", chapterListSelector)
-        obj.put("chapterTitleSelector", chapterTitleSelector)
-        obj.put("chapterUrlSelector", chapterUrlSelector)
-        obj.put("chapterDateSelector", chapterDateSelector)
-        obj.put("pageImageSelector", pageImageSelector)
-        obj.put("pageImageAttributes", pageImageAttributes)
-        obj.put("customUserAgent", customUserAgent)
-        obj.put("customReferer", customReferer)
-        obj.put("customHeadersJson", customHeadersJson)
-        obj.put("requiresWebViewVerification", requiresWebViewVerification)
-        obj.put("useWebViewOnlyMode", useWebViewOnlyMode)
-        obj.put("updatedAt", updatedAt)
-        return obj.toString(2)
+        fun esc(s: String): String = s
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        return buildString {
+            append("{\n")
+            append("  \"sourceId\": \"${esc(sourceId)}\",\n")
+            append("  \"sourceName\": \"${esc(sourceName)}\",\n")
+            append("  \"domain\": \"${esc(domain)}\",\n")
+            append("  \"baseUrl\": \"${esc(baseUrl)}\",\n")
+            append("  \"language\": \"${esc(language)}\",\n")
+            append("  \"engineType\": \"${esc(engineType.name)}\",\n")
+            append("  \"contentRating\": \"${esc(contentRating.name)}\",\n")
+            append("  \"popularPath\": \"${esc(popularPath)}\",\n")
+            append("  \"latestPath\": \"${esc(latestPath)}\",\n")
+            append("  \"searchPath\": \"${esc(searchPath)}\",\n")
+            append("  \"paginationPattern\": \"${esc(paginationPattern)}\",\n")
+            append("  \"popularUrlTemplate\": \"${esc(popularUrlTemplate)}\",\n")
+            append("  \"latestUrlTemplate\": \"${esc(latestUrlTemplate)}\",\n")
+            append("  \"searchUrlTemplate\": \"${esc(searchUrlTemplate)}\",\n")
+            append("  \"mangaCardSelector\": \"${esc(mangaCardSelector)}\",\n")
+            append("  \"mangaItemSelector\": \"${esc(mangaItemSelector)}\",\n")
+            append("  \"mangaTitleSelector\": \"${esc(mangaTitleSelector)}\",\n")
+            append("  \"titleSelector\": \"${esc(titleSelector)}\",\n")
+            append("  \"mangaUrlSelector\": \"${esc(mangaUrlSelector)}\",\n")
+            append("  \"coverImageSelector\": \"${esc(coverImageSelector)}\",\n")
+            append("  \"coverSelector\": \"${esc(coverSelector)}\",\n")
+            append("  \"coverImageAttributes\": \"${esc(coverImageAttributes)}\",\n")
+            append("  \"latestChapterSelector\": \"${esc(latestChapterSelector)}\",\n")
+            append("  \"nextPageSelector\": \"${esc(nextPageSelector)}\",\n")
+            append("  \"detailsTitleSelector\": \"${esc(detailsTitleSelector)}\",\n")
+            append("  \"detailsDescriptionSelector\": \"${esc(detailsDescriptionSelector)}\",\n")
+            append("  \"descriptionSelector\": \"${esc(descriptionSelector)}\",\n")
+            append("  \"detailsCoverSelector\": \"${esc(detailsCoverSelector)}\",\n")
+            append("  \"detailsAuthorSelector\": \"${esc(detailsAuthorSelector)}\",\n")
+            append("  \"authorSelector\": \"${esc(authorSelector)}\",\n")
+            append("  \"detailsStatusSelector\": \"${esc(detailsStatusSelector)}\",\n")
+            append("  \"statusSelector\": \"${esc(statusSelector)}\",\n")
+            append("  \"detailsGenresSelector\": \"${esc(detailsGenresSelector)}\",\n")
+            append("  \"genreSelector\": \"${esc(genreSelector)}\",\n")
+            append("  \"chapterListSelector\": \"${esc(chapterListSelector)}\",\n")
+            append("  \"chapterTitleSelector\": \"${esc(chapterTitleSelector)}\",\n")
+            append("  \"chapterUrlSelector\": \"${esc(chapterUrlSelector)}\",\n")
+            append("  \"chapterDateSelector\": \"${esc(chapterDateSelector)}\",\n")
+            append("  \"pageImageSelector\": \"${esc(pageImageSelector)}\",\n")
+            append("  \"pageImageAttributes\": \"${esc(pageImageAttributes)}\",\n")
+            append("  \"customUserAgent\": \"${esc(userAgent)}\",\n")
+            append("  \"customReferer\": \"${esc(customReferer)}\",\n")
+            append("  \"customHeadersJson\": \"${esc(customHeadersJson)}\",\n")
+            append("  \"requiresWebViewVerification\": $requiresVerification,\n")
+            append("  \"requiresVerification\": $requiresVerification,\n")
+            append("  \"useWebViewOnlyMode\": $useWebViewOnlyMode,\n")
+            append("  \"updatedAt\": $updatedAt\n")
+            append("}")
+        }
     }
 
     companion object {
-        fun fromJsonString(json: String): SourceConfiguration {
-            val obj = JSONObject(json.trim())
-            val domain = obj.optString("domain", "").trim().lowercase()
+        fun toJsonString(config: SourceConfiguration): String = config.toJsonString()
+
+        fun fromJsonString(json: String): Result<SourceConfiguration> = runCatching {
+            parseJsonOrThrow(json)
+        }
+
+        fun parseJsonOrThrow(json: String): SourceConfiguration {
+            val trimmed = json.trim()
+            require(trimmed.startsWith("{") && trimmed.endsWith("}")) { "صيغة JSON غير صالحة" }
+
+            fun extractString(key: String, default: String = ""): String {
+                val pattern = Regex(""""${Regex.escape(key)}"\s*:\s*"((?:\\.|[^"\\])*)"""")
+                val match = pattern.find(trimmed) ?: return default
+                return match.groupValues[1]
+                    .replace("\\\"", "\"")
+                    .replace("\\n", "\n")
+                    .replace("\\r", "\r")
+                    .replace("\\\\", "\\")
+            }
+
+            fun extractBoolean(key: String, default: Boolean = false): Boolean {
+                val pattern = Regex(""""${Regex.escape(key)}"\s*:\s*(true|false)""", RegexOption.IGNORE_CASE)
+                val match = pattern.find(trimmed) ?: return default
+                return match.groupValues[1].equals("true", ignoreCase = true)
+            }
+
+            val domain = extractString("domain", "").trim().lowercase()
             require(domain.isNotBlank()) { "حقل domain مفقود في ملف إعدادات JSON" }
-            val id = obj.optString("sourceId", "site_${domain.replace('.', '_')}").trim()
-            val name = obj.optString("sourceName", domain.substringBefore('.')).trim()
-            val baseUrl = obj.optString("baseUrl", "https://$domain").trim()
+            val id = extractString("sourceId", "site_${domain.replace('.', '_')}").trim()
+            val name = extractString("sourceName", domain.substringBefore('.')).trim()
+            val baseUrl = extractString("baseUrl", "https://$domain").trim()
             val engine = runCatching {
-                SourceEngineType.valueOf(obj.optString("engineType", SourceEngineType.MADARA.name))
+                SourceEngineType.valueOf(extractString("engineType", SourceEngineType.MADARA.name))
             }.getOrDefault(SourceEngineType.MADARA)
             val rating = runCatching {
-                ContentRating.valueOf(obj.optString("contentRating", ContentRating.GENERAL.name))
+                ContentRating.valueOf(extractString("contentRating", ContentRating.GENERAL.name))
             }.getOrDefault(ContentRating.GENERAL)
+
+            val cardSel = extractString(
+                "mangaCardSelector",
+                extractString(
+                    "mangaItemSelector",
+                    "div.page-item-detail, div.c-tabs-item__content, div.bsx, div.utao, div.uta, div.box, div.manga-item, article.item"
+                )
+            )
+            val titleSel = extractString(
+                "mangaTitleSelector",
+                extractString(
+                    "titleSelector",
+                    ".post-title h3 a, .post-title a, .luf a h4, .luf a, .tt, h3 a, h4 a"
+                )
+            )
+            val coverSel = extractString(
+                "coverImageSelector",
+                extractString(
+                    "coverSelector",
+                    ".item-thumb img, .tab-thumb img, .limit img, .imgu img, .manga-poster img, img"
+                )
+            )
+            val descSel = extractString(
+                "detailsDescriptionSelector",
+                extractString(
+                    "descriptionSelector",
+                    ".summary__content p, .description-summary p, .entry-content p, .review-content p, .summary__content"
+                )
+            )
+            val genreSel = extractString(
+                "detailsGenresSelector",
+                extractString(
+                    "genreSelector",
+                    ".genres-content a, .mgen a, .seriestugenre a, .review-author-info a"
+                )
+            )
+            val authorSel = extractString(
+                "detailsAuthorSelector",
+                extractString(
+                    "authorSelector",
+                    ".author-content a, .fmed b:contains(المؤلف) + span"
+                )
+            )
+            val statusSel = extractString(
+                "detailsStatusSelector",
+                extractString(
+                    "statusSelector",
+                    ".post-status .summary-content, .tsinfo .imptdt:contains(الحالة) i"
+                )
+            )
+            val reqVer = extractBoolean(
+                "requiresVerification",
+                extractBoolean("requiresWebViewVerification", false)
+            )
 
             return SourceConfiguration(
                 sourceId = id,
                 sourceName = name,
                 domain = domain,
                 baseUrl = baseUrl,
-                language = obj.optString("language", "ar"),
+                language = extractString("language", "ar"),
                 engineType = engine,
                 contentRating = rating,
-                popularUrlTemplate = obj.optString("popularUrlTemplate", "{baseUrl}/manga/?page={page}"),
-                latestUrlTemplate = obj.optString("latestUrlTemplate", "{baseUrl}/manga/?m_orderby=latest&page={page}"),
-                searchUrlTemplate = obj.optString("searchUrlTemplate", "{baseUrl}/?s={query}&post_type=wp-manga"),
-                mangaCardSelector = obj.optString(
-                    "mangaCardSelector",
-                    "div.page-item-detail, div.c-tabs-item__content, div.bsx, div.utao, div.uta, div.box, div.manga-item, article.item"
-                ),
-                mangaTitleSelector = obj.optString(
-                    "mangaTitleSelector",
-                    ".post-title h3 a, .post-title a, .luf a h4, .luf a, .tt, h3 a, h4 a"
-                ),
-                mangaUrlSelector = obj.optString(
+                popularPath = extractString("popularPath", "/manga/"),
+                latestPath = extractString("latestPath", "/manga/?m_orderby=latest"),
+                searchPath = extractString("searchPath", "/?s={query}&post_type=wp-manga"),
+                paginationPattern = extractString("paginationPattern", "page/{page}/"),
+                popularUrlTemplate = extractString("popularUrlTemplate", "{baseUrl}/manga/?page={page}"),
+                latestUrlTemplate = extractString("latestUrlTemplate", "{baseUrl}/manga/?m_orderby=latest&page={page}"),
+                searchUrlTemplate = extractString("searchUrlTemplate", "{baseUrl}/?s={query}&post_type=wp-manga"),
+                mangaCardSelector = cardSel,
+                mangaItemSelector = cardSel,
+                mangaTitleSelector = titleSel,
+                titleSelector = titleSel,
+                mangaUrlSelector = extractString(
                     "mangaUrlSelector",
                     ".post-title a[href], .luf a[href], h3 a[href], .item-thumb a[href], a[href*=/manga/], a[href*=/series/], a[href]"
                 ),
-                coverImageSelector = obj.optString(
-                    "coverImageSelector",
-                    ".item-thumb img, .tab-thumb img, .limit img, .imgu img, .manga-poster img, img"
-                ),
-                coverImageAttributes = obj.optString(
+                coverImageSelector = coverSel,
+                coverSelector = coverSel,
+                coverImageAttributes = extractString(
                     "coverImageAttributes",
                     "data-src,data-lazy-src,data-original,data-bg,srcset,src"
                 ),
-                latestChapterSelector = obj.optString(
+                latestChapterSelector = extractString(
                     "latestChapterSelector",
                     ".list-chapter .chapter-item:first-child .chapter a, .latest-chap .chapter a, .luf ul li a, .epxs, .chapter a"
                 ),
-                nextPageSelector = obj.optString(
+                nextPageSelector = extractString(
                     "nextPageSelector",
                     "a.next, a.nextpostslink, .nav-previous a, .pagination .next, .hpage a.r"
                 ),
-                detailsTitleSelector = obj.optString(
+                detailsTitleSelector = extractString(
                     "detailsTitleSelector",
                     ".post-title h1, h1.entry-title, .author-info-title h1, h1"
                 ),
-                detailsDescriptionSelector = obj.optString(
-                    "detailsDescriptionSelector",
-                    ".summary__content p, .description-summary p, .entry-content p, .review-content p, .summary__content"
-                ),
-                detailsCoverSelector = obj.optString(
+                detailsDescriptionSelector = descSel,
+                descriptionSelector = descSel,
+                detailsCoverSelector = extractString(
                     "detailsCoverSelector",
                     ".summary_image img, .thumb img, .manga-poster img, .seriestucontl img, img.wp-post-image"
                 ),
-                detailsAuthorSelector = obj.optString(
-                    "detailsAuthorSelector",
-                    ".author-content a, .fmed b:contains(المؤلف) + span"
-                ),
-                detailsStatusSelector = obj.optString(
-                    "detailsStatusSelector",
-                    ".post-status .summary-content, .tsinfo .imptdt:contains(الحالة) i"
-                ),
-                detailsGenresSelector = obj.optString(
-                    "detailsGenresSelector",
-                    ".genres-content a, .mgen a, .seriestugenre a, .review-author-info a"
-                ),
-                chapterListSelector = obj.optString(
+                detailsAuthorSelector = authorSel,
+                authorSelector = authorSel,
+                detailsStatusSelector = statusSel,
+                statusSelector = statusSel,
+                detailsGenresSelector = genreSel,
+                genreSelector = genreSel,
+                chapterListSelector = extractString(
                     "chapterListSelector",
                     "li.wp-manga-chapter, #chapterlist li, .eplister ul li, .listing-chapters_wrap li"
                 ),
-                chapterTitleSelector = obj.optString("chapterTitleSelector", ".chapternum, .epl-num, .epl-title, a"),
-                chapterUrlSelector = obj.optString("chapterUrlSelector", "a[href]"),
-                chapterDateSelector = obj.optString("chapterDateSelector", ".chapter-release-date, .chapterdate, .epl-date, span.date"),
-                pageImageSelector = obj.optString(
+                chapterTitleSelector = extractString("chapterTitleSelector", ".chapternum, .epl-num, .epl-title, a"),
+                chapterUrlSelector = extractString("chapterUrlSelector", "a[href]"),
+                chapterDateSelector = extractString("chapterDateSelector", ".chapter-release-date, .chapterdate, .epl-date, span.date"),
+                pageImageSelector = extractString(
                     "pageImageSelector",
                     ".reading-content img, .page-break img, #readerarea img, img.wp-manga-chapter-img, img.manga-chapter-img"
                 ),
-                pageImageAttributes = obj.optString("pageImageAttributes", "data-src,data-lazy-src,data-original,src"),
-                customUserAgent = obj.optString(
+                pageImageAttributes = extractString("pageImageAttributes", "data-src,data-lazy-src,data-original,src"),
+                customUserAgent = extractString(
                     "customUserAgent",
                     "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36"
                 ),
-                customReferer = obj.optString("customReferer", "$baseUrl/"),
-                customHeadersJson = obj.optString("customHeadersJson", "{}"),
-                requiresWebViewVerification = obj.optBoolean("requiresWebViewVerification", false),
-                useWebViewOnlyMode = obj.optBoolean("useWebViewOnlyMode", false),
+                customReferer = extractString("customReferer", "$baseUrl/"),
+                customHeadersJson = extractString("customHeadersJson", "{}"),
+                requiresWebViewVerification = reqVer,
+                requiresVerification = reqVer,
+                useWebViewOnlyMode = extractBoolean("useWebViewOnlyMode", false),
                 updatedAt = System.currentTimeMillis()
             )
         }
@@ -307,63 +470,73 @@ data class SiteInspectionReport(
     val inputUrl: String,
     val normalizedDomain: String,
     val baseUrl: String,
-    val siteTitle: String,
     // 1. صحة النطاق
-    val isValidDomain: Boolean,
+    val isValidDomain: Boolean = true,
     // 2. دعم HTTPS
-    val supportsHttps: Boolean,
+    val usesHttps: Boolean = true,
     // 3. إمكانية الوصول للموقع
-    val isReachable: Boolean,
-    val httpStatusCode: Int,
-    val responseTimeMs: Long,
+    val isReachable: Boolean = false,
+    val httpStatusCode: Int = 0,
+    val responseTimeMs: Long = 0L,
     // 4. وجود تحقق أمني
-    val requiresVerification: Boolean,
-    val verificationTypeAr: String,
-    // 5. نوع الموقع
-    val detectedArchitecture: String,
+    val requiresVerification: Boolean = false,
+    val verificationChallengeType: String = "NONE",
+    // 5. نوع الموقع / الموصل
+    val detectedArchitecture: SourceEngineType = SourceEngineType.CUSTOM_HTML,
     // 6. وجود قائمة أعمال
-    val canExtractMangaList: Boolean,
-    val detectedMangaCount: Int,
+    val canExtractWorksList: Boolean = false,
+    val extractedWorksCount: Int = 0,
     val sampleMangaTitles: List<String> = emptyList(),
     // 7. وجود صور الأغلفة
-    val canExtractCovers: Boolean,
-    val detectedCoversCount: Int,
+    val canExtractCovers: Boolean = false,
     val sampleCoverUrl: String? = null,
     // 8. وجود صفحات التفاصيل
-    val canExtractDetails: Boolean,
+    val canExtractDetails: Boolean = false,
     // 9. وجود قائمة الفصول
-    val canExtractChapters: Boolean,
-    val detectedChaptersCount: Int,
+    val canExtractChapters: Boolean = false,
+    val extractedChaptersCount: Int = 0,
     // 10. وجود صفحات القراءة داخل الفصل
-    val canExtractPages: Boolean,
-    val detectedPagesCount: Int,
+    val canExtractPages: Boolean = false,
+    val extractedPagesCount: Int = 0,
     // 11. دعم البحث
-    val supportsSearch: Boolean,
+    val supportsSearch: Boolean = false,
     // 12. دعم التصفح متعدد الصفحات Pagination
-    val supportsPagination: Boolean,
+    val supportsPagination: Boolean = false,
     // 13. تصنيف المحتوى
-    val detectedContentRating: ContentRating,
+    val detectedContentRating: ContentRating = ContentRating.GENERAL,
     val detectedAdultIndicators: List<String> = emptyList(),
-    // 14. نوع الموصل المناسب للموقع
-    val recommendedEngine: SourceEngineType,
-    val recommendedStatus: SourceStatus,
-    val suggestedConfiguration: SourceConfiguration,
-    val summaryAr: String
-)
+    // 14. حالة الدعم المقترحة وإعدادات الموصل
+    val recommendedStatus: SourceStatus = SourceStatus.UNSUPPORTED,
+    val suggestedName: String = "",
+    val diagnosticSummaryAr: String = "",
+    val recommendedConfig: SourceConfiguration? = null
+) {
+    val supportsHttps: Boolean get() = usesHttps
+    val detectedEngineType: SourceEngineType get() = detectedArchitecture
+    val canExtractMangaList: Boolean get() = canExtractWorksList
+    val extractedMangaCount: Int get() = extractedWorksCount
+    val detectedMangaCount: Int get() = extractedWorksCount
+    val detectedChaptersCount: Int get() = extractedChaptersCount
+    val detectedPagesCount: Int get() = extractedPagesCount
+    val summaryAr: String get() = diagnosticSummaryAr
+    val errorMessageAr: String?
+        get() = if (!isReachable || recommendedStatus == SourceStatus.UNSUPPORTED) diagnosticSummaryAr else null
+}
 
 /**
  * Section 8: Single stage result in the 11-stage [SourceFullTestReport].
  */
 data class SourceStageTestResult(
-    val stageNumber: Int,
-    val stageCode: String,
     val stageNameAr: String,
     val passed: Boolean,
-    val count: Int = 0,
-    val durationMs: Long = 0L,
+    val itemCount: Int = 0,
     val detailsAr: String = "",
+    val durationMs: Long = 0L,
+    val stageNumber: Int = 0,
     val errorAr: String? = null
-)
+) {
+    val count: Int get() = itemCount
+}
 
 /**
  * Section 8: Complete 11-stage test report for a manga source.
@@ -372,20 +545,26 @@ data class SourceFullTestReport(
     val sourceId: String,
     val sourceName: String,
     val domain: String,
-    val engineType: SourceEngineType,
-    val contentRating: ContentRating,
     val finalStatus: SourceStatus,
     val stages: List<SourceStageTestResult>,
-    val extractedMangaCount: Int,
-    val extractedCoversCount: Int,
-    val extractedChaptersCount: Int,
-    val extractedPagesCount: Int,
+    val engineType: SourceEngineType = SourceEngineType.MADARA,
+    val contentRating: ContentRating = ContentRating.GENERAL,
+    val extractedMangaCount: Int = stages.firstOrNull { it.stageNameAr.contains("الشائعة") }?.itemCount ?: 0,
+    val extractedCoversCount: Int = stages.firstOrNull { it.stageNameAr.contains("الأغلفة") }?.itemCount ?: 0,
+    val extractedChaptersCount: Int = stages.firstOrNull { it.stageNameAr.contains("الفصول") }?.itemCount ?: 0,
+    val extractedPagesCount: Int = stages.firstOrNull { it.stageNameAr.contains("صفحات الفصل") }?.itemCount ?: 0,
     val sampleCoverUrl: String? = null,
-    val lastError: String? = null,
+    val lastError: String? = stages.firstOrNull { !it.passed }?.detailsAr,
     val testedAt: Long = System.currentTimeMillis()
 ) {
-    val passedStagesCount: Int
+    val passedCount: Int
         get() = stages.count { it.passed }
+
+    val passedStagesCount: Int
+        get() = passedCount
+
+    val summaryAr: String?
+        get() = if (finalStatus == SourceStatus.SUPPORTED) null else lastError
 }
 
 /**
@@ -461,7 +640,8 @@ data class SourceInfo(
     val extractedChaptersCount: Int = 0,
     val extractedPagesCount: Int = 0,
     val lastError: String? = null,
-    val isCustomConfigured: Boolean = false,
+    val hasCustomConfig: Boolean = false,
+    val isCustomConfigured: Boolean = hasCustomConfig,
     val version: Int = 1,
     val lastCheckedAt: Long = System.currentTimeMillis()
 )

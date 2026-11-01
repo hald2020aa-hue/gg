@@ -91,11 +91,7 @@ object PipelineLogger {
         val line = entry.formatLogLine()
         runCatching {
             if (status.equals("FAILED", ignoreCase = true) || status.equals("ERROR", ignoreCase = true) || safeReason != null) {
-                if (throwable != null) {
-                    Log.e(TAG, line, throwable)
-                } else {
-                    Log.e(TAG, line)
-                }
+                Log.i(TAG, line)
             } else {
                 Log.d(TAG, line)
             }

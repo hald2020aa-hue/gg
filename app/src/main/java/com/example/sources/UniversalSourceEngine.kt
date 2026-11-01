@@ -61,15 +61,15 @@ class DynamicSourceAdapter(
     iconColorHex = customIconColorHex ?: DynamicSiteSource.computeColorForDomain(config.domain),
     requiresCloudflareVerification = config.requiresVerification,
     mirrorDomains = emptyList(),
-    itemSelector = config.mangaItemSelector,
-    titleSelector = config.titleSelector,
-    coverSelector = config.coverSelector,
+    itemSelector = config.mangaCardSelector.ifBlank { config.mangaItemSelector },
+    titleSelector = config.mangaTitleSelector.ifBlank { config.titleSelector },
+    coverSelector = config.coverImageSelector.ifBlank { config.coverSelector },
     latestChapterSelector = config.latestChapterSelector,
     detailsTitleSelector = config.detailsTitleSelector,
-    detailsDescSelector = config.descriptionSelector,
-    detailsGenresSelector = config.genreSelector,
-    detailsAuthorSelector = config.authorSelector,
-    detailsStatusSelector = config.statusSelector,
+    detailsDescSelector = config.detailsDescriptionSelector.ifBlank { config.descriptionSelector },
+    detailsGenresSelector = config.detailsGenresSelector.ifBlank { config.genreSelector },
+    detailsAuthorSelector = config.detailsAuthorSelector.ifBlank { config.authorSelector },
+    detailsStatusSelector = config.detailsStatusSelector.ifBlank { config.statusSelector },
     chapterRowSelector = config.chapterListSelector,
     readerImagesSelector = config.pageImageSelector
 ) {
@@ -318,29 +318,35 @@ object SourceAdapterFactory {
 
     fun defaultConfigForEngine(
         domain: String,
-        sourceName: String,
-        engineType: SourceEngineType,
+        sourceName: String = "",
+        name: String = sourceName,
+        engineType: SourceEngineType = SourceEngineType.MADARA,
         contentRating: ContentRating = ContentRating.GENERAL,
         requiresVerification: Boolean = false
     ): SourceConfiguration {
         val cleanDomain = domain.lowercase()
+        val effectiveName = name.ifBlank { sourceName }.ifBlank {
+            cleanDomain.substringBefore('.').replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        }
         val base = SourceConfiguration(
-            sourceName = sourceName.ifBlank {
-                cleanDomain.substringBefore('.').replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-            },
+            sourceName = effectiveName,
             baseUrl = "https://$cleanDomain",
             domain = cleanDomain,
             engineType = engineType,
             contentRating = contentRating,
-            requiresVerification = requiresVerification
+            requiresVerification = requiresVerification,
+            requiresWebViewVerification = requiresVerification
         )
         return when (engineType) {
             SourceEngineType.MADARA -> base.copy(
                 popularPath = "/manga/",
                 latestPath = "/manga/?m_orderby=latest",
                 searchPath = "/?s={query}&post_type=wp-manga",
+                mangaCardSelector = "div.page-item-detail, div.c-tabs-item__content",
                 mangaItemSelector = "div.page-item-detail, div.c-tabs-item__content",
+                mangaTitleSelector = ".post-title h3 a, .post-title a, h3 a",
                 titleSelector = ".post-title h3 a, .post-title a, h3 a",
+                coverImageSelector = ".item-thumb img, .tab-thumb img",
                 coverSelector = ".item-thumb img, .tab-thumb img",
                 latestChapterSelector = ".list-chapter .chapter-item:first-child .chapter a, .latest-chap .chapter a",
                 chapterListSelector = "li.wp-manga-chapter",
@@ -350,8 +356,11 @@ object SourceAdapterFactory {
                 popularPath = "/manga/?order=popular",
                 latestPath = "/manga/?order=update",
                 searchPath = "/?s={query}",
+                mangaCardSelector = "div.bsx, div.utao, div.uta, div.box",
                 mangaItemSelector = "div.bsx, div.utao, div.uta, div.box",
+                mangaTitleSelector = ".tt, .luf a h4, .luf a, h3 a, a[title]",
                 titleSelector = ".tt, .luf a h4, .luf a, h3 a, a[title]",
+                coverImageSelector = ".limit img, .imgu img",
                 coverSelector = ".limit img, .imgu img",
                 latestChapterSelector = ".epxs, .luf ul li:first-child a",
                 chapterListSelector = "#chapterlist li, .eplister ul li",
@@ -361,8 +370,11 @@ object SourceAdapterFactory {
                 popularPath = "/manga/",
                 latestPath = "/latest-update/",
                 searchPath = "/search?q={query}",
+                mangaCardSelector = "div.manga-item, div.item, div.bsx",
                 mangaItemSelector = "div.manga-item, div.item, div.bsx",
+                mangaTitleSelector = "h3 a, .title a, a[title]",
                 titleSelector = "h3 a, .title a, a[title]",
+                coverImageSelector = ".manga-poster img, img",
                 coverSelector = ".manga-poster img, img",
                 latestChapterSelector = ".chapter a, .fd-infor a",
                 chapterListSelector = "ul.reading-list li, #chapterlist li",
@@ -373,7 +385,11 @@ object SourceAdapterFactory {
     }
 
     fun createAdapter(config: SourceConfiguration, customId: String? = null): DynamicSourceAdapter {
-        return DynamicSourceAdapter(config = config, customId = customId)
+        return DynamicSourceAdapter(config = config, customId = customId ?: config.sourceId.takeIf { it.isNotBlank() })
+    }
+
+    fun createFromConfig(config: SourceConfiguration, customId: String? = null): DynamicSourceAdapter {
+        return createAdapter(config, customId)
     }
 }
 
@@ -955,4 +971,98 @@ class UniversalSourceEngine(
             Result.failure(e)
         }
     }
+
+    companion object {
+        suspend fun inspectSite(
+            rawUrl: String,
+            verificationManager: VerificationManager = VerificationManager()
+        ): Result<SiteInspectionReport> {
+            return runCatching {
+                UniversalSourceEngine(verificationManager).inspectSite(rawUrl)
+            }
+        }
+
+        suspend fun runFullTest(
+            source: MangaSource,
+            verificationManager: VerificationManager = VerificationManager()
+        ): SourceFullTestReport {
+            return UniversalSourceEngine(verificationManager).testSource(source)
+        }
+
+        suspend fun previewConfiguration(
+            config: SourceConfiguration,
+            verificationManager: VerificationManager = VerificationManager()
+        ): Result<List<MangaSummary>> {
+            return UniversalSourceEngine(verificationManager).previewConfiguration(config)
+        }
+
+        fun createOrUpgradeAdapter(
+            domain: String,
+            customId: String,
+            customName: String,
+            config: SourceConfiguration,
+            builtInFallback: MangaSource?,
+            verificationManager: VerificationManager = VerificationManager()
+        ): MangaSource {
+            if (builtInFallback != null && config.engineType != SourceEngineType.CUSTOM_HTML) {
+                builtInFallback.attachVerificationManager(verificationManager)
+                return builtInFallback
+            }
+            val adapter = SourceAdapterFactory.createFromConfig(
+                config.copy(
+                    sourceId = customId,
+                    sourceName = customName.ifBlank { config.sourceName },
+                    domain = domain.lowercase()
+                ),
+                customId = customId
+            )
+            adapter.attachVerificationManager(verificationManager)
+            return adapter
+        }
+    }
 }
+
+/**
+ * Section 4: Unified SourceParser (`SourceParser`) for HTML/CSS Selectors, JSON APIs, and RSS/Atom feeds.
+ */
+object SourceParser {
+    fun parseMangaListFromHtml(
+        html: String,
+        baseUri: String,
+        sourceId: String,
+        config: SourceConfiguration
+    ): List<MangaSummary> {
+        val adapter = SourceAdapterFactory.createAdapter(
+            config = config.copy(sourceId = sourceId),
+            customId = sourceId
+        )
+        return adapter.parseMangaSummariesFromHtml(html, baseUri)
+    }
+
+    fun parseMangaListFromJson(
+        jsonString: String,
+        baseUri: String,
+        sourceId: String,
+        config: SourceConfiguration
+    ): List<MangaSummary> {
+        val adapter = SourceAdapterFactory.createAdapter(
+            config = config.copy(sourceId = sourceId),
+            customId = sourceId
+        )
+        return adapter.parseGenericJsonCatalog(jsonString, baseUri)
+    }
+
+    fun parseMangaListFromRss(
+        xmlString: String,
+        baseUri: String,
+        sourceId: String,
+        config: SourceConfiguration
+    ): List<MangaSummary> {
+        val adapter = SourceAdapterFactory.createAdapter(
+            config = config.copy(sourceId = sourceId),
+            customId = sourceId
+        )
+        return adapter.parseRssOrAtomFeed(xmlString, baseUri)
+    }
+}
+
