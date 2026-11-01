@@ -30,12 +30,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Comment
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.ScreenRotation
@@ -525,7 +525,7 @@ fun MangaReaderScreen(
                                 modifier = Modifier.testTag("reader_chapter_list_button")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.FormatListBulleted,
+                                    imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
                                     contentDescription = "قائمة الفصول",
                                     tint = Color.White
                                 )

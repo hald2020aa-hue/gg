@@ -63,7 +63,7 @@ abstract class MangaDatabase : RoomDatabase() {
                     "manga_reader.db"
                 )
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }
             }

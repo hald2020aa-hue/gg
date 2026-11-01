@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.CheckCircle
@@ -43,7 +44,6 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -186,7 +186,7 @@ fun SourceManagerScreen(
                             modifier = Modifier.testTag("top_add_site_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.PlaylistAdd,
+                                imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
                                 contentDescription = "إضافة موقع"
                             )
                         }
@@ -245,7 +245,7 @@ fun SourceManagerScreen(
                                 .height(48.dp)
                                 .testTag("add_site_empty_button")
                         ) {
-                            Icon(Icons.Default.PlaylistAdd, contentDescription = null)
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("إضافة موقع", style = MaterialTheme.typography.titleSmall)
                         }
@@ -1643,7 +1643,7 @@ fun InternalBrowserScreen(
                 .height(48.dp)
                 .testTag("browser_floating_add_site_button")
         ) {
-            Icon(Icons.Default.PlaylistAdd, contentDescription = null)
+            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
             Text("إضافة موقع", style = MaterialTheme.typography.titleSmall)
         }

@@ -3,12 +3,10 @@ name: Android CI & Build Debug APK
 on:
   push:
     branches:
-      - main
-      - master
+      - '**'
   pull_request:
     branches:
-      - main
-      - master
+      - '**'
   workflow_dispatch:
 
 permissions:
@@ -37,6 +35,9 @@ jobs:
           echo "ANDROID_SDK_ROOT=$SDK_DIR" >> $GITHUB_ENV
           sudo mkdir -p "$SDK_DIR/licenses"
           sudo chmod -R 777 "$SDK_DIR"
+          if [ -x "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          fi
           printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n84831b9409646a918e30573bab4c9c91346d8abd\n" > "$SDK_DIR/licenses/android-sdk-license"
           printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n504667f4c0de7af1a06de9f4b1727b84351f2910\n" > "$SDK_DIR/licenses/android-sdk-preview-license"
           printf "\n601085b94cd77f0b54ff86406957099ebe79c4d6\n" > "$SDK_DIR/licenses/android-googletv-license"
